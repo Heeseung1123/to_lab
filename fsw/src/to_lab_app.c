@@ -34,6 +34,7 @@
 #include "to_lab_perfids.h"
 #include "to_lab_version.h"
 #include "to_lab_sub_table.h"
+#include "tm_sdlp_my.h"
 
 /*
 ** Global Data Section
@@ -232,6 +233,13 @@ int32 TO_LAB_init(void)
             CFE_EVS_SendEvent(TO_SUBSCRIBE_ERR_EID, CFE_EVS_EventType_ERROR,
                               "L%d TO Can't subscribe to stream 0x%x status %i", __LINE__,
                               (unsigned int)CFE_SB_MsgIdToValue(TO_LAB_Subs->Subs[i].Stream), (int)status);
+    }
+
+    /* Build the premade TM frame. */
+    status = TM_SDLP_myInit();
+    if (status != TM_SDLP_MY_SUCCESS)
+    {
+        return status;
     }
 
     /*
@@ -573,7 +581,7 @@ void TO_LAB_forward_telemetry(void)
             {
                 CFE_ES_PerfLogEntry(TO_SOCKET_SEND_PERF_ID);
 
-                status = OS_SocketSendTo(TO_LAB_Global.TLMsockid, SBBufPtr, size, &d_addr);
+                status = TM_SDLP_myForwardPacket(SBBufPtr, size, TO_LAB_Global.TLMsockid, &d_addr);
 
                 CFE_ES_PerfLogExit(TO_SOCKET_SEND_PERF_ID);
             }
@@ -590,6 +598,18 @@ void TO_LAB_forward_telemetry(void)
         }
         /* If CFE_SB_status != CFE_SUCCESS, then no packet was received from CFE_SB_ReceiveBuffer() */
     } while (CFE_SB_status == CFE_SUCCESS);
+
+    /* Send the partly filled frame so no packet waits past this cycle. */
+    if ((TO_LAB_Global.downlink_on == true) && (TO_LAB_Global.suppress_sendto == false))
+    {
+        status = TM_SDLP_mySendFrame(TO_LAB_Global.TLMsockid, &d_addr);
+        if (status < 0)
+        {
+            CFE_EVS_SendEvent(TO_TLMOUTSTOP_ERR_EID, CFE_EVS_EventType_ERROR,
+                              "L%d TO sendto error %d. Tlm output suppressed\n", __LINE__, (int)status);
+            TO_LAB_Global.suppress_sendto = true;
+        }
+    }
 }
 
 /************************/

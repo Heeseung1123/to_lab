@@ -51,6 +51,8 @@
 #define TO_REMOVEALLPKTS_INF_EID 17
 #define TO_NOOP_INF_EID          18
 #define TO_TBL_ERR_EID           19
+#define TO_FRAMEINIT_ERR_EID     20
+#define TO_PKTSIZE_ERR_EID       21
 
 /******************************************************************************/
 
