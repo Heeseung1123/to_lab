@@ -1,34 +1,52 @@
 /* Minimal TM-SDLP framing for one fixed channel, reduced from io_lib tm_sdlp.c. */
 #include "tm_sdlp_my.h"
 #include "to_lab_events.h"
+#include "tm_sdlp_of.h"
 
-typedef struct
-{
-    uint16            dataFieldLength;   /* Length of the data field */
-    uint16            dataFieldOffset;   /* Data field offset from the frame start */
-    uint16            freeOctets;        /* Free octets left in the data field */
-    uint16            currentDataOffset; /* Next free data octet from the frame start */
-    uint8             mcFrameCount;      /* Master Channel Frame Count */
-    TMTF_my_PriHdr_t *frame;             /* Transfer Frame buffer */
-} TM_SDLP_myFrameInfo_t;
+/* Moved to tm_sdlp_my.h with the overflow fields, so tm_sdlp_of.c can use it. */
+// typedef struct
+// {
+//     uint16            dataFieldLength;   /* Length of the data field */
+//     uint16            dataFieldOffset;   /* Data field offset from the frame start */
+//     uint16            freeOctets;        /* Free octets left in the data field */
+//     uint16            currentDataOffset; /* Next free data octet from the frame start */
+//     uint8             mcFrameCount;      /* Master Channel Frame Count */
+//     TMTF_my_PriHdr_t *frame;             /* Transfer Frame buffer */
+// } TM_SDLP_myFrameInfo_t;
 
 static TM_SDLP_myFrameInfo_t TM_SDLP_myFrameInfo;
 static uint8                 TM_SDLP_myFrameBuffer[TM_SDLP_MY_FRAME_SIZE];
 
-/* The remainder must be 0 or large enough for an idle packet. */
-static bool TM_SDLP_myFits(size_t packetSize, size_t freeOctets)
-{
-    return (packetSize == freeOctets) || (packetSize + TM_SDLP_MY_IDLE_MIN_LENGTH <= freeOctets);
-}
+/* Not used: packets are now segmented instead of being moved to the next frame. */
+// static bool TM_SDLP_myFits(size_t packetSize, size_t freeOctets)
+// {
+//     return (packetSize == freeOctets) || (packetSize + TM_SDLP_MY_IDLE_MIN_LENGTH <= freeOctets);
+// }
 
 /* Fills the remaining data field with one idle packet. */
-static void TM_SDLP_myAddIdlePacket(TM_SDLP_myFrameInfo_t *pFrameInfo)
+static void TM_SDLP_myFillFrameWithIdle(TM_SDLP_myFrameInfo_t *pFrameInfo)
 {
     uint8 *pIdle;
     uint16 idleLengthField;
 
     if (pFrameInfo->freeOctets == 0)
     {
+        return;
+    }
+
+    /* Fewer than 7 octets left: a 7 octet idle packet is split into the queue,
+     * as NOS3 TM_SDLP_AddIdlePacket does (tm_sdlp.c:413-438). */
+    if (pFrameInfo->freeOctets < TM_SDLP_MY_IDLE_MIN_LENGTH)
+    {
+        static const uint8 shortIdle[TM_SDLP_MY_IDLE_MIN_LENGTH] = {0x07, 0xFF, 0xC0, 0x00, 0x00, 0x00, 0x00};
+
+        if (TM_SDLP_myCopyToFrameOrOverflow(pFrameInfo, shortIdle, sizeof(shortIdle), true) < 0)
+        {
+            /* Queue full: zero the rest so no old data is sent. */
+            CFE_PSP_MemSet((uint8 *)pFrameInfo->frame + pFrameInfo->currentDataOffset, 0, pFrameInfo->freeOctets);
+            pFrameInfo->currentDataOffset += pFrameInfo->freeOctets;
+            pFrameInfo->freeOctets = 0;
+        }
         return;
     }
 
@@ -45,21 +63,36 @@ static void TM_SDLP_myAddIdlePacket(TM_SDLP_myFrameInfo_t *pFrameInfo)
     pIdle[4] = (uint8)(idleLengthField >> 8);
     pIdle[5] = (uint8)(idleLengthField & 0xFF);
 
+    /* The idle packet also counts for the First Header Pointer. */
+    if (!pFrameInfo->isFirstHdrPtrSet)
+    {
+        TMTF_MY_WR_FIRSTHDRPTR(*pFrameInfo->frame, pFrameInfo->currentDataOffset - pFrameInfo->dataFieldOffset);
+        pFrameInfo->isFirstHdrPtrSet = true;
+    }
+
     pFrameInfo->currentDataOffset += pFrameInfo->freeOctets;
     pFrameInfo->freeOctets = 0;
 }
 
 /* Writes the Master Channel Frame Count and rewinds the frame for the next packets. */
-static void TM_SDLP_myCompleteFrame(TM_SDLP_myFrameInfo_t *pFrameInfo)
+static void TM_SDLP_myCloseFrame(TM_SDLP_myFrameInfo_t *pFrameInfo)
 {
     pFrameInfo->mcFrameCount++;
     TMTF_MY_WR_MCFRMCNT(*pFrameInfo->frame, pFrameInfo->mcFrameCount);
 
+    /* The frame holds only the middle of a packet (NOS3 tm_sdlp.c:676-680). */
+    if (!pFrameInfo->isFirstHdrPtrSet)
+    {
+        TMTF_MY_WR_FIRSTHDRPTR(*pFrameInfo->frame, TM_SDLP_MY_NO_FIRST_HDR_PTR);
+    }
+
     pFrameInfo->freeOctets        = pFrameInfo->dataFieldLength;
     pFrameInfo->currentDataOffset = pFrameInfo->dataFieldOffset;
+    pFrameInfo->isFirstHdrPtrSet  = false;
 }
 
-int32 TM_SDLP_myInit(void)
+// int32 TM_SDLP_myInit(void)
+int32 TM_SDLP_myInitFrameAndOverflow(uint8 *pOverflowBuffer, uint16 overflowSize)
 {
     TM_SDLP_myFrameInfo_t *pFrameInfo = &TM_SDLP_myFrameInfo;
     int32                  dataFieldLength;
@@ -89,11 +122,18 @@ int32 TM_SDLP_myInit(void)
         return TM_SDLP_MY_INVALID_LENGTH;
     }
 
+    if ((pOverflowBuffer == NULL) || (overflowSize == 0))
+    {
+        CFE_EVS_SendEvent(TO_FRAMEINIT_ERR_EID, CFE_EVS_EventType_ERROR, "TO invalid TM overflow buffer");
+        return TM_SDLP_MY_INVALID_LENGTH;
+    }
+
     pFrameInfo->dataFieldLength   = (uint16)dataFieldLength;
     pFrameInfo->dataFieldOffset   = dataFieldOffset;
     pFrameInfo->freeOctets        = pFrameInfo->dataFieldLength;
     pFrameInfo->currentDataOffset = dataFieldOffset;
     pFrameInfo->mcFrameCount      = 0;
+    pFrameInfo->isFirstHdrPtrSet  = false;
     pFrameInfo->frame             = (TMTF_my_PriHdr_t *)TM_SDLP_myFrameBuffer;
 
     CFE_PSP_MemSet(TM_SDLP_myFrameBuffer, 0, sizeof(TM_SDLP_myFrameBuffer));
@@ -104,71 +144,82 @@ int32 TM_SDLP_myInit(void)
     TMTF_MY_WR_SEGLENGTHID(*pFrameInfo->frame, TMTF_MY_SEGLENGTHID_PKT);
 
     /* Packets are never segmented, so every sent frame starts with a packet. */
-    TMTF_MY_WR_FIRSTHDRPTR(*pFrameInfo->frame, 0);
+    // TMTF_MY_WR_FIRSTHDRPTR(*pFrameInfo->frame, 0);
+
+    /* The First Header Pointer is now written per frame by AddData and CompleteFrame. */
+    TM_SDLP_myInitOverflowQueue(&pFrameInfo->overflowInfo, pOverflowBuffer, overflowSize);
 
     return TM_SDLP_MY_SUCCESS;
 }
 
-int32 TM_SDLP_mySendFrame(osal_id_t sockId, const OS_SockAddr_t *pAddr)
+int32 TM_SDLP_myFillAndSendFrame(osal_id_t sockId, const OS_SockAddr_t *pAddr)
 {
     TM_SDLP_myFrameInfo_t *pFrameInfo = &TM_SDLP_myFrameInfo;
+    int32                  status;
 
     if (pFrameInfo->freeOctets == pFrameInfo->dataFieldLength)
     {
         return TM_SDLP_MY_SUCCESS;
     }
 
-    TM_SDLP_myAddIdlePacket(pFrameInfo);
-    TM_SDLP_myCompleteFrame(pFrameInfo);
+    /* A long queue can fill the next frame at once, so send until one has room. */
+    do
+    {
+        TM_SDLP_myFillFrameWithIdle(pFrameInfo);
+        TM_SDLP_myCloseFrame(pFrameInfo);
 
-    /* Encryption is disabled for now. */
-    // iStatus = Crypto_TM_ApplySecurity((uint8_t *)pFrameInfo->frame, TM_SDLP_MY_FRAME_SIZE);
-    // if (iStatus != CRYPTO_LIB_SUCCESS)
-    // {
-    //     return iStatus;
-    // }
+        /* Encryption is disabled for now. */
+        // iStatus = Crypto_TM_ApplySecurity((uint8_t *)pFrameInfo->frame, TM_SDLP_MY_FRAME_SIZE);
+        // if (iStatus != CRYPTO_LIB_SUCCESS)
+        // {
+        //     return iStatus;
+        // }
 
-    return OS_SocketSendTo(sockId, TM_SDLP_myFrameBuffer, sizeof(TM_SDLP_myFrameBuffer), pAddr);
+        // return OS_SocketSendTo(sockId, TM_SDLP_myFrameBuffer, sizeof(TM_SDLP_myFrameBuffer), pAddr);
+        status = OS_SocketSendTo(sockId, TM_SDLP_myFrameBuffer, sizeof(TM_SDLP_myFrameBuffer), pAddr);
+        if (status < 0)
+        {
+            return status;
+        }
+
+        /* The queue goes first into the next frame (NOS3 TM_SDLP_StartFrame). */
+        TM_SDLP_myRefillFrameFromOverflow(pFrameInfo);
+    } while (pFrameInfo->freeOctets == 0);
+
+    return status;
 }
 
-int32 TM_SDLP_myForwardPacket(const void *pPacket, size_t packetSize, osal_id_t sockId, const OS_SockAddr_t *pAddr)
+int32 TM_SDLP_myAddPacketToFrame(const void *pPacket, size_t packetSize, osal_id_t sockId, const OS_SockAddr_t *pAddr)
 {
     TM_SDLP_myFrameInfo_t *pFrameInfo = &TM_SDLP_myFrameInfo;
     int32                  status     = TM_SDLP_MY_SUCCESS;
 
-    //if SPP packet do not fit into 1786 byte, then Drop the packet 
-    if (!TM_SDLP_myFits(packetSize, pFrameInfo->dataFieldLength))
+
+    /* The SB message size fits the 16 bit lengths used by the frame and queue. */
+    if (packetSize > 0xFFFF)
     {
         CFE_EVS_SendEvent(TO_PKTSIZE_ERR_EID, CFE_EVS_EventType_ERROR, "TO dropped packet of %u bytes",
                           (unsigned int)packetSize);
         return TM_SDLP_MY_SUCCESS;
     }
-    
 
-    //if SPP packet do not fit into remaining buffer in the frame previously filled,
-    //then fill it with idle packet and send it 
-    if (!TM_SDLP_myFits(packetSize, pFrameInfo->freeOctets))
+    /* Octets that do not fit go to the overflow queue for the next frame.
+     * If the queue cannot hold them, the whole packet is dropped. */
+    status = TM_SDLP_myCopyToFrameOrOverflow(pFrameInfo, (const uint8 *)pPacket, (uint16)packetSize, true);
+    if (status < 0)
     {
-        status = TM_SDLP_mySendFrame(sockId, pAddr);
-        if (status < 0)
-        {
-            return status;
-        }
+        CFE_EVS_SendEvent(TO_PKTSIZE_ERR_EID, CFE_EVS_EventType_ERROR,
+                          "TO dropped packet of %u bytes, overflow queue full (%d)", (unsigned int)packetSize,
+                          (int)status);
+        return TM_SDLP_MY_SUCCESS;
     }
+    status = TM_SDLP_MY_SUCCESS;
 
-
-    //if SPP packet < freeOctets < dataFieldLength, 
-    //then copy the SPP packet to remaining buffer of premade Frame 
-    CFE_PSP_MemCpy((uint8 *)pFrameInfo->frame + pFrameInfo->currentDataOffset, pPacket, packetSize);
-    pFrameInfo->currentDataOffset += packetSize;
-    pFrameInfo->freeOctets -= packetSize;
-
-    //if the SPP packet is fits perfectly into remainig size, then send it 
     if (pFrameInfo->freeOctets == 0)
     {
-        status = TM_SDLP_mySendFrame(sockId, pAddr);
+        status = TM_SDLP_myFillAndSendFrame(sockId, pAddr);
     }
-    //return the status and loop 
-    //if there is no message to foward in TLM pipe, then the mySendFrame() will be called 
+
+    // if there is no message to foward in TLM pipe, then the mySendFrame() will be called 
     return status;
 }

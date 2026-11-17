@@ -44,6 +44,10 @@
 
 #include "sample_app_msgids.h"
 #include "blinky_msgids.h"
+// #include "cf_msgids.h"
+#include "file_dl_msgids.h"
+#include "msn_app_msgids.h"
+// #include "relay_app_msgids.h" /* relay_app removed; file_dl relays files */
 
 #if 0
 #include "hs_msgids.h"
@@ -55,10 +59,29 @@
 
 TO_LAB_Subs_t TO_LAB_Subs = {.Subs = {/* CFS App Subscriptions */
                                       {CFE_SB_MSGID_WRAP_VALUE(TO_LAB_HK_TLM_MID), {0, 0}, 4},
-                                      {CFE_SB_MSGID_WRAP_VALUE(TO_LAB_DATA_TYPES_MID), {0, 0}, 4},
+                                      /* Sent only on command; not needed. */
+                                      // {CFE_SB_MSGID_WRAP_VALUE(TO_LAB_DATA_TYPES_MID), {0, 0}, 4},
                                       {CFE_SB_MSGID_WRAP_VALUE(CI_LAB_HK_TLM_MID), {0, 0}, 4},
-                                      {CFE_SB_MSGID_WRAP_VALUE(SAMPLE_APP_HK_TLM_MID), {0, 0}, 4},
-                                      {CFE_SB_MSGID_WRAP_VALUE(BLINKY_HK_TLM_MID), {0, 0}, 4},
+                                      {CFE_SB_MSGID_WRAP_VALUE(CI_LAB_PQC_EP_TLM_MID), {0, 0}, 4},
+                                      /* Their HK is no longer requested (sch_lab_table.c). */
+                                      // {CFE_SB_MSGID_WRAP_VALUE(SAMPLE_APP_HK_TLM_MID), {0, 0}, 4},
+                                      // {CFE_SB_MSGID_WRAP_VALUE(BLINKY_HK_TLM_MID), {0, 0}, 4},
+                                      // {CFE_SB_MSGID_WRAP_VALUE(CF_HK_TLM_MID), {0, 0}, 4},
+                                      // {CFE_SB_MSGID_WRAP_VALUE(CF_EOT_TLM_MID), {0, 0}, 4},
+                                      // {CFE_SB_MSGID_WRAP_VALUE(0x0FFD), {0, 0}, 32},
+                                      /* file_dl segments: one per 100 ms, so 32 leaves room for RESEND bursts. */
+                                      {CFE_SB_MSGID_WRAP_VALUE(FILE_DL_SEG_TLM_MID), {0, 0}, 32},
+                                      {CFE_SB_MSGID_WRAP_VALUE(MSN_APP_HK_TLM_MID), {0, 0}, 4},
+                                      {CFE_SB_MSGID_WRAP_VALUE(MSN_APP_TEMP_TLM_MID), {0, 0}, 4},
+                                      {CFE_SB_MSGID_WRAP_VALUE(MSN_APP_DIAG_TLM_MID), {0, 0}, 4},
+                                      {CFE_SB_MSGID_WRAP_VALUE(MSN_APP_APP_STATUS_TLM_MID), {0, 0}, 4},
+                                      // {CFE_SB_MSGID_WRAP_VALUE(RELAY_APP_HK_TLM_MID), {0, 0}, 4},
+                                      /* file_dl upload status: gaps to send again, and the verify result. */
+                                      // {CFE_SB_MSGID_WRAP_VALUE(FILE_DL_UL_STATUS_TLM_MID), {0, 0}, 4},
+                                      {CFE_SB_MSGID_WRAP_VALUE(FILE_UL_STATUS_TLM_MID), {0, 0}, 4},
+                                      /* Relay: its own status and downlink segment MIDs. */
+                                      {CFE_SB_MSGID_WRAP_VALUE(FILE_RELAY_STATUS_TLM_MID), {0, 0}, 4},
+                                      {CFE_SB_MSGID_WRAP_VALUE(FILE_RELAY_SEG_TLM_MID), {0, 0}, 32},
 
 #if 0
         /* Add these if needed */
@@ -70,18 +93,21 @@ TO_LAB_Subs_t TO_LAB_Subs = {.Subs = {/* CFS App Subscriptions */
 #endif
 
                                       /* cFE Core subscriptions */
-                                      {CFE_SB_MSGID_WRAP_VALUE(CFE_ES_HK_TLM_MID), {0, 0}, 4},
-                                      {CFE_SB_MSGID_WRAP_VALUE(CFE_EVS_HK_TLM_MID), {0, 0}, 4},
-                                      {CFE_SB_MSGID_WRAP_VALUE(CFE_SB_HK_TLM_MID), {0, 0}, 4},
-                                      {CFE_SB_MSGID_WRAP_VALUE(CFE_TBL_HK_TLM_MID), {0, 0}, 4},
-                                      {CFE_SB_MSGID_WRAP_VALUE(CFE_TIME_HK_TLM_MID), {0, 0}, 4},
-                                      {CFE_SB_MSGID_WRAP_VALUE(CFE_TIME_DIAG_TLM_MID), {0, 0}, 4},
-                                      {CFE_SB_MSGID_WRAP_VALUE(CFE_SB_STATS_TLM_MID), {0, 0}, 4},
-                                      {CFE_SB_MSGID_WRAP_VALUE(CFE_TBL_REG_TLM_MID), {0, 0}, 4},
-                                      {CFE_SB_MSGID_WRAP_VALUE(CFE_EVS_LONG_EVENT_MSG_MID), {0, 0}, 32},
+                                      /* cFE core HK is no longer requested; the rest is sent only on command. */
+                                      // {CFE_SB_MSGID_WRAP_VALUE(CFE_ES_HK_TLM_MID), {0, 0}, 4},
+                                      // {CFE_SB_MSGID_WRAP_VALUE(CFE_EVS_HK_TLM_MID), {0, 0}, 4},
+                                      // {CFE_SB_MSGID_WRAP_VALUE(CFE_SB_HK_TLM_MID), {0, 0}, 4},
+                                      // {CFE_SB_MSGID_WRAP_VALUE(CFE_TBL_HK_TLM_MID), {0, 0}, 4},
+                                      // {CFE_SB_MSGID_WRAP_VALUE(CFE_TIME_HK_TLM_MID), {0, 0}, 4},
+                                      // {CFE_SB_MSGID_WRAP_VALUE(CFE_TIME_DIAG_TLM_MID), {0, 0}, 4},
+                                      // {CFE_SB_MSGID_WRAP_VALUE(CFE_SB_STATS_TLM_MID), {0, 0}, 4},
+                                      // {CFE_SB_MSGID_WRAP_VALUE(CFE_TBL_REG_TLM_MID), {0, 0}, 4},
+                                      /* Events are not downlinked; they still go to the console log. */
+                                      // {CFE_SB_MSGID_WRAP_VALUE(CFE_EVS_LONG_EVENT_MSG_MID), {0, 0}, 32},
 
-                                      {CFE_SB_MSGID_WRAP_VALUE(CFE_ES_APP_TLM_MID), {0, 0}, 4},
-                                      {CFE_SB_MSGID_WRAP_VALUE(CFE_ES_MEMSTATS_TLM_MID), {0, 0}, 4},
+                                      /* Sent only on command; not needed. */
+                                      // {CFE_SB_MSGID_WRAP_VALUE(CFE_ES_APP_TLM_MID), {0, 0}, 4},
+                                      // {CFE_SB_MSGID_WRAP_VALUE(CFE_ES_MEMSTATS_TLM_MID), {0, 0}, 4},
 
                                       /* TO_UNUSED entry to mark the end of valid MsgIds */
                                       {TO_UNUSED, {0, 0}, 0}}};

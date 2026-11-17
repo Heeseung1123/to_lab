@@ -15,6 +15,17 @@ typedef struct
     uint8 DataFieldStatus[2]; /* Flags and First Header Pointer */
 } TMTF_my_PriHdr_t;
 
+typedef struct
+{
+	uint16	buffSize;
+	uint16	freeOctets;
+	uint16	partialOctets;
+	
+	uint8	*dataStart;
+	uint8	*dataEnd;
+	uint8	*buffer;
+} TMTF_myOverflowInfo_t;
+
 #define TMTF_MY_WR_TF_VERSION(hdr, val) ((hdr).Id[0] = ((hdr).Id[0] & 0x3F) | (((val)&0x03) << 6))
 
 #define TMTF_MY_WR_SCID(hdr, val)                                 \

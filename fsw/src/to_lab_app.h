@@ -41,7 +41,11 @@
 
 /*****************************************************************************/
 
-#define TO_TASK_MSEC 500 /* run at 2 Hz */
+// #define TO_TASK_MSEC 500 /* run at 2 Hz */
+/* 10 Hz: the telemetry pipe is emptied 5 times more often, so bursts fit in it.
+ * A partly filled frame still waits up to TO_LAB_FLUSH_CYCLES cycles (500 ms). */
+#define TO_TASK_MSEC        100
+#define TO_LAB_FLUSH_CYCLES 5
 #define TO_UNUSED    CFE_SB_MSGID_RESERVED
 
 /**

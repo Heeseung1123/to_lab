@@ -36,6 +36,9 @@
 #include "to_lab_sub_table.h"
 #include "tm_sdlp_my.h"
 
+/* Overflow queue size, one TM frame as in NOS3 TO_CUSTOM_TF_OVERFLOW_SIZE (to_platform_cfg.h:57). */
+#define TO_LAB_TF_OVERFLOW_SIZE TM_SDLP_MY_FRAME_SIZE
+
 /*
 ** Global Data Section
 */
@@ -50,6 +53,11 @@ typedef struct
 
     TO_LAB_HkTlm_t        HkTlm;
     TO_LAB_DataTypesTlm_t DataTypesTlm;
+
+    /* Kept by TO like ofBuff in NOS3 TO_CustomVChnl_t (to_custom.c:84). */
+    uint8 OverflowBuffer[TO_LAB_TF_OVERFLOW_SIZE];
+
+    uint32 FlushCycleCount; /* cycles since the last partly filled frame was sent */
 } TO_LAB_GlobalData_t;
 
 TO_LAB_GlobalData_t TO_LAB_Global;
@@ -112,7 +120,7 @@ void TO_Lab_AppMain(void)
     {
         CFE_ES_PerfLogExit(TO_MAIN_TASK_PERF_ID);
 
-        OS_TaskDelay(TO_TASK_MSEC); /*2 Hz*/
+        OS_TaskDelay(TO_TASK_MSEC); /* 10 Hz, see to_lab_app.h */
 
         CFE_ES_PerfLogEntry(TO_MAIN_TASK_PERF_ID);
 
@@ -236,7 +244,8 @@ int32 TO_LAB_init(void)
     }
 
     /* Build the premade TM frame. */
-    status = TM_SDLP_myInit();
+    // status = TM_SDLP_myInit();
+    status = TM_SDLP_myInitFrameAndOverflow(TO_LAB_Global.OverflowBuffer, sizeof(TO_LAB_Global.OverflowBuffer));
     if (status != TM_SDLP_MY_SUCCESS)
     {
         return status;
@@ -581,7 +590,7 @@ void TO_LAB_forward_telemetry(void)
             {
                 CFE_ES_PerfLogEntry(TO_SOCKET_SEND_PERF_ID);
 
-                status = TM_SDLP_myForwardPacket(SBBufPtr, size, TO_LAB_Global.TLMsockid, &d_addr);
+                status = TM_SDLP_myAddPacketToFrame(SBBufPtr, size, TO_LAB_Global.TLMsockid, &d_addr);
 
                 CFE_ES_PerfLogExit(TO_SOCKET_SEND_PERF_ID);
             }
@@ -600,9 +609,17 @@ void TO_LAB_forward_telemetry(void)
     } while (CFE_SB_status == CFE_SUCCESS);
 
     /* Send the partly filled frame so no packet waits past this cycle. */
-    if ((TO_LAB_Global.downlink_on == true) && (TO_LAB_Global.suppress_sendto == false))
+    // if ((TO_LAB_Global.downlink_on == true) && (TO_LAB_Global.suppress_sendto == false))
+    /* Full frames go out at once; a partly filled one only every TO_LAB_FLUSH_CYCLES cycles,
+     * so the 10 Hz loop does not send mostly idle frames 10 times a second. */
+    if (++TO_LAB_Global.FlushCycleCount >= TO_LAB_FLUSH_CYCLES)
     {
-        status = TM_SDLP_mySendFrame(TO_LAB_Global.TLMsockid, &d_addr);
+        TO_LAB_Global.FlushCycleCount = 0;
+    }
+    if ((TO_LAB_Global.FlushCycleCount == 0) && (TO_LAB_Global.downlink_on == true) &&
+        (TO_LAB_Global.suppress_sendto == false))
+    {
+        status = TM_SDLP_myFillAndSendFrame(TO_LAB_Global.TLMsockid, &d_addr);
         if (status < 0)
         {
             CFE_EVS_SendEvent(TO_TLMOUTSTOP_ERR_EID, CFE_EVS_EventType_ERROR,
