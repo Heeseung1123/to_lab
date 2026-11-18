@@ -2,6 +2,7 @@
 #include "tm_sdlp_my.h"
 #include "to_lab_events.h"
 #include "tm_sdlp_of.h"
+#include "to_lab_dest_my.h"
 
 /* Moved to tm_sdlp_my.h with the overflow fields, so tm_sdlp_of.c can use it. */
 // typedef struct
@@ -176,7 +177,9 @@ int32 TM_SDLP_myFillAndSendFrame(osal_id_t sockId, const OS_SockAddr_t *pAddr)
         // }
 
         // return OS_SocketSendTo(sockId, TM_SDLP_myFrameBuffer, sizeof(TM_SDLP_myFrameBuffer), pAddr);
-        status = OS_SocketSendTo(sockId, TM_SDLP_myFrameBuffer, sizeof(TM_SDLP_myFrameBuffer), pAddr);
+        // status = OS_SocketSendTo(sockId, TM_SDLP_myFrameBuffer, sizeof(TM_SDLP_myFrameBuffer), pAddr);
+        /* The same frame also goes to every added destination (to_lab_dest_my.c). */
+        status = TO_LAB_SendToAllDests(sockId, TM_SDLP_myFrameBuffer, sizeof(TM_SDLP_myFrameBuffer), pAddr);
         if (status < 0)
         {
             return status;

@@ -35,6 +35,7 @@
 #include "to_lab_version.h"
 #include "to_lab_sub_table.h"
 #include "tm_sdlp_my.h"
+#include "to_lab_dest_my.h"
 
 /* Overflow queue size, one TM frame as in NOS3 TO_CUSTOM_TF_OVERFLOW_SIZE (to_platform_cfg.h:57). */
 #define TO_LAB_TF_OVERFLOW_SIZE TM_SDLP_MY_FRAME_SIZE
@@ -368,6 +369,14 @@ void TO_LAB_exec_local_command(CFE_SB_Buffer_t *SBBufPtr)
 
         case TO_OUTPUT_ENABLE_CC:
             TO_LAB_EnableOutput((const TO_LAB_EnableOutputCmd_t *)SBBufPtr);
+            break;
+
+        case TO_ADD_DEST_CC: /* more ground stations get the same TM frames */
+            TO_LAB_AddDest((const TO_LAB_DestCmd_t *)SBBufPtr);
+            break;
+
+        case TO_REMOVE_DEST_CC:
+            TO_LAB_RemoveDest((const TO_LAB_DestCmd_t *)SBBufPtr);
             break;
 
         default:
