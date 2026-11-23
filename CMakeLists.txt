@@ -12,7 +12,7 @@ include_directories(${blinky_MISSION_DIR}/fsw/platform_inc)
 # CF keeps its message IDs in fsw/inc (cf_msgids.h).
 # include_directories(${cf_MISSION_DIR}/fsw/inc)
 include_directories(${file_dl_MISSION_DIR}/fsw/platform_inc)
-include_directories(${msn_app_MISSION_DIR}/fsw/platform_inc)
+include_directories(${mission_app_MISSION_DIR}/fsw/platform_inc)
 # relay_app removed: relaying is now part of file_dl (UL_START Relay flag).
 # include_directories(${relay_app_MISSION_DIR}/fsw/platform_inc)
 
