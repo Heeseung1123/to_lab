@@ -17,9 +17,9 @@
 
 #define TM_SDLP_MY_FRAME_SIZE 1786
 
-/* Fixed SDLS layout: SPI 2 + IV 12 bytes and no trailer.
- * The area stays reserved and zeroed while encryption is disabled. */
-#define TM_SDLP_MY_SDLS_HDR_LENGTH 14
+/* SDLS TM baseline: SPI 2 + IV 12 bytes, and a 16 byte MAC.
+ * Both are 0 bytes, not reserved, while SDLS is disabled. */
+#define TM_SDLP_MY_SDLS_HDR_LENGTH 0
 #define TM_SDLP_MY_SDLS_TRL_LENGTH 0
 
 /* An idle packet needs a 6 byte header and at least 1 data byte. */
